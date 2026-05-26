@@ -16,10 +16,10 @@ import os
 import sys
 import threading
 
-from camera.config import load_config
-from camera.registry import CameraRegistry
-from onvif.http_server import OnvifHttpServer
-from onvif.wsdiscovery import WsDiscoveryServer
+from src.camera.config import load_config
+from src.camera.registry import CameraRegistry
+from src.onvif.http_server import OnvifHttpServer
+from src.onvif.wsdiscovery import WsDiscoveryServer
 
 
 def main():
