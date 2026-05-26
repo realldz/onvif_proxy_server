@@ -1,0 +1,36 @@
+{
+  "bind_host": "0.0.0.0",
+  "bind_port": 5000,
+  "cameras": [
+    {
+      "name": "yoosee_mips",
+      "onvif_host": "192.168.1.100",
+      "onvif_port": 5000,
+      "rtsp_host": "192.168.1.100",
+      "rtsp_port": 554,
+      "username": "admin",
+      "password": "",
+      "platform": "mips",
+      "ptz_protocol": "rtsp_cmd",
+      "rtsp_cmd_config": {
+        "case": "upper",
+        "direction_mapping": "mips"
+      }
+    },
+    {
+      "name": "yoosee_arm",
+      "onvif_host": "192.168.1.101",
+      "onvif_port": 80,
+      "rtsp_host": "192.168.1.101",
+      "rtsp_port": 554,
+      "username": "admin",
+      "password": "",
+      "platform": "arm",
+      "ptz_protocol": "onvif_native",
+      "rtsp_cmd_config": {
+        "case": "upper",
+        "direction_mapping": "arm"
+      }
+    }
+  ]
+}
