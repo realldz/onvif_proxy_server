@@ -16,6 +16,7 @@ CAMERA_DEFAULTS = {
     'onvif_port': 80,
     'rtsp_host': None,
     'rtsp_port': 554,
+    'bind_port': None,
     'rtsp_cmd_config': {},
 }
 

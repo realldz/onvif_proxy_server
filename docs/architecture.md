@@ -9,51 +9,79 @@ Frigate while translating PTZ commands to camera-specific RTSP messages.
 ## Architecture
 
 ```
-Frigate --ONVIF SOAP--> onvif-bridge:5000 --RTSP ptzCmd--> Camera:554
-                             |
-                             |--HTTP proxy--> Camera:80/5000 (Device, Media, Imaging)
+Frigate --ONVIF SOAP--> onvif-bridge:5001 --> RTSP ptzCmd --> Camera A:554
+                         onvif-bridge:5002 --> RTSP ptzCmd --> Camera B:554
+                              |
+                              |--HTTP proxy--> Camera A/B ONVIF (Device/Media)
 ```
 
-- **Non-PTZ** requests (DeviceInfo, MediaProfiles, StreamUri, Imaging, Events)
-  are proxied to the camera's native ONVIF endpoint
-- **PTZ** requests (ContinuousMove, Stop, GetPresets, GetStatus, etc.) are
-  intercepted and handled via RTSP `SET_PARAMETER`/`USER_CMD_SET` with `ptzCmd` header
+- **Non-PTZ** requests → proxied to camera's native ONVIF endpoint
+- **PTZ** requests (if `ptz_protocol=rtsp_cmd`) → intercepted, translated to RTSP
+
+## Camera Identification
+
+The bridge supports 3 methods to identify which camera a request belongs to,
+checked in this order:
+
+### 1. Port-based (recommended for Frigate)
+
+Each camera gets a unique `bind_port` on the bridge. Frigate configures
+each camera with a different `port` pointing to the bridge.
+
+```json
+// bridge config.json
+{
+  "cameras": [
+    {"name": "cam1", "bind_port": 5001, "onvif_host": "10.0.0.1", ...},
+    {"name": "cam2", "bind_port": 5002, "onvif_host": "10.0.0.2", ...}
+  ]
+}
+```
+
+```yaml
+# Frigate config
+cameras:
+  cam1:
+    onvif: { host: "bridge_ip", port: 5001, user: "admin", password: "" }
+  cam2:
+    onvif: { host: "bridge_ip", port: 5002, user: "admin", password: "" }
+```
+
+### 2. Path-based (for WS-Discovery)
+
+`http://bridge:port/onvif/{camera_name}/device_service`
+
+Used automatically when WS-Discovery announces each camera with its
+unique URL.
+
+### 3. Single camera fallback
+
+If only one camera is configured and no port/path match, the bridge
+routes to it by default.
 
 ## Protocol Selection
 
-Per-camera config supports two PTZ protocols:
+Per-camera `ptz_protocol` field:
 
-| Protocol | Description |
-|----------|-------------|
+| Value | Behavior |
+|-------|----------|
+| `rtsp_cmd` | Intercept PTZ, send RTSP SET_PARAMETER/USER_CMD_SET |
 | `onvif_native` | Forward PTZ to camera's ONVIF (passthrough) |
-| `rtsp_cmd` | Translate PTZ to RTSP custom commands |
 
 ## Direction Mapping
-
-Cameras use non-standard spelling for directions:
 
 | Direction | Standard | MIPS/ARM |
 |-----------|----------|----------|
 | Up | UP | UP |
-| Down | DOWN | DWON (typo in firmware) |
+| Down | DOWN | DWON |
 | Left | LEFT | LEFT |
 | Right | RIGHT | RIGHT |
 | Stop | STOP | STOP |
 
 ## RTSP Formats
 
-The server tries multiple RTSP methods (ported from `ptz_rtsp_cmd.py`):
-
-1. `SET_PARAMETER` + `Content-type: ptzCmd: <dir>` (PHP-style trick)
-2. `SET_PARAMETER` + header `ptzCmd: <dir>`
-3. `USER_CMD_SET` + body `ptzCmd: <dir>`
-4. `USER_CMD_SET` + header `ptzCmd: <dir>`
-5. `SET_PARAMETER` + body `ptzCmd: <dir>`
-6. `OPTIONS` + `ptzCmd` header
-7. `DESCRIBE` + `ptzCmd` header
-8. `PLAY` + `USER_CMD_SET` header
-
-Auto-detection finds the first working format + stream path.
+8 methods from `ptz_rtsp_cmd.py`. Auto-detection finds the first working
+format + stream path on first use.
 
 ## Services
 
@@ -61,86 +89,80 @@ Auto-detection finds the first working format + stream path.
 |---------|-----------|----------|
 | Device | `ver10/device/wsdl` | Proxy to camera |
 | Media | `ver10/media/wsdl` | Proxy to camera |
-| PTZ | `ver20/ptz/wsdl` | Intercept (rtsp_cmd) or Proxy (onvif_native) |
+| PTZ | `ver20/ptz/wsdl` | Intercept (`rtsp_cmd`) or proxy (`onvif_native`) |
 | Imaging | `ver20/imaging/wsdl` | Proxy to camera |
 | Events | `ver10/events/wsdl` | Proxy to camera |
 | DeviceIO | `ver10/deviceio/wsdl` | Proxy to camera |
 
-## API
-
-### URL Structure
+## URL Structure
 
 ```
-http://{bridge}:{port}/onvif/{camera_name}/device_service
-http://{bridge}:{port}/onvif/{camera_name}/media_service
-http://{bridge}:{port}/onvif/{camera_name}/ptz_service
+Port-based:   http://bridge:{port}/onvif/device_service
+Path-based:   http://bridge:5000/onvif/{name}/device_service
+WS-Discovery: UDP 239.255.255.250:3702 → ProbeMatch with per-camera XAddrs
 ```
-
-### WS-Discovery
-
-UDP multicast `239.255.255.250:3702`. Responds to Probe with a ProbeMatch
-for each configured camera.
 
 ## Project Structure
 
 ```
 onvif_proxy_server/
-├── config.example.json   # Example configuration
-├── Dockerfile            # Container build
+├── config.example.json
+├── Dockerfile
 ├── src/
-│   ├── server.py         # Entry point
+│   ├── server.py
 │   ├── camera/
-│   │   ├── config.py     # JSON config loader
-│   │   ├── registry.py   # Camera lookup
-│   │   └── rtsp_client.py # RTSP PTZ client
+│   │   ├── config.py
+│   │   ├── registry.py
+│   │   └── rtsp_client.py
 │   └── onvif/
-│       ├── templates.py  # SOAP XML templates
-│       ├── ptz_handler.py # PTZ action handler
-│       ├── proxy.py       # HTTP proxy to camera
-│       ├── dispatcher.py  # SOAP action resolver
-│       ├── http_server.py # HTTP server + handler
-│       └── wsdiscovery.py # WS-Discovery responder
+│       ├── templates.py
+│       ├── ptz_handler.py
+│       ├── proxy.py
+│       ├── dispatcher.py
+│       ├── http_server.py
+│       └── wsdiscovery.py
 ├── tests/
-│   ├── test_rtsp_client.py
-│   ├── test_ptz_handler.py
-│   ├── test_dispatcher.py
-│   ├── test_config.py
-│   └── test_registry.py
 └── docs/
-    └── architecture.md
 ```
 
 ## Usage
 
 ```bash
-# Create config from example
 cp config.example.json config.json
 # Edit config.json with your camera details
 
-# Run
 python -m src.server -c config.json -v
 
 # Docker
 docker build -t onvif-proxy-server .
-docker run -d -p 5000:5000 -p 3702:3702/udp -v $(pwd)/config.json:/app/config.json onvif-proxy-server
+docker run -d -p 5001:5001 -p 5002:5002 -p 3702:3702/udp \
+  -v $(pwd)/config.json:/app/config.json onvif-proxy-server
 ```
 
-## Frigate Configuration
+## Frigate Configuration Example
 
 ```yaml
+# frigate.yml
 cameras:
-  my_camera:
+  garage:
     ffmpeg:
       inputs:
         - path: rtsp://192.168.1.100:554/onvif1
-          roles:
-            - record
-            - detect
+          roles: [record, detect]
     onvif:
-      host: 192.168.1.200  # Bridge server IP
-      port: 5000
+      host: 192.168.1.200   # bridge IP
+      port: 5001             # unique port per camera
       user: admin
       password: ""
-    # Custom ONVIF path (if not using WS-Discovery)
-    # onvif_url: http://192.168.1.200:5000/onvif/camera_name/device_service
+
+  backyard:
+    ffmpeg:
+      inputs:
+        - path: rtsp://192.168.1.101:554/onvif1
+          roles: [record, detect]
+    onvif:
+      host: 192.168.1.200
+      port: 5002
+      user: admin
+      password: ""
 ```

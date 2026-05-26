@@ -1,5 +1,6 @@
 import logging
 import socketserver
+import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from .dispatcher import resolve_action
@@ -12,13 +13,24 @@ log = logging.getLogger(__name__)
 class OnvifHandler(BaseHTTPRequestHandler):
     registry = None
 
+    def _resolve_camera(self):
+        cam = self.registry.get_by_port(self.server.server_port)
+        if cam:
+            return cam
+        cam = self.registry.get_by_path(self.path)
+        if cam:
+            return cam
+        if len(self.registry) == 1:
+            return self.registry.list_all()[0]
+        return None
+
     def do_POST(self):
         length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(length) if length > 0 else b''
 
-        camera = self.registry.get_by_path(self.path)
+        camera = self._resolve_camera()
         if not camera:
-            self.send_error(404, f'Camera not found in path: {self.path}')
+            self.send_error(404, f'Camera not found (port={self.server.server_port}, path={self.path})')
             return
 
         action = resolve_action(body, {k: v for k, v in self.headers.items()})
@@ -36,9 +48,9 @@ class OnvifHandler(BaseHTTPRequestHandler):
         self._send_response(status, resp_headers, resp_body)
 
     def do_GET(self):
-        camera = self.registry.get_by_path(self.path)
+        camera = self._resolve_camera()
         if not camera:
-            self.send_error(404, f'Camera not found in path: {self.path}')
+            self.send_error(404, f'Camera not found (port={self.server.server_port}, path={self.path})')
             return
         status, resp_headers, resp_body = proxy_request(camera, 'GET', self.path, dict(self.headers), b'')
         self._send_response(status, resp_headers, resp_body)
@@ -65,11 +77,24 @@ class ThreadingOnvifServer(socketserver.ThreadingMixIn, HTTPServer):
 class OnvifHttpServer:
     def __init__(self, host, port, registry):
         OnvifHandler.registry = registry
-        self._server = ThreadingOnvifServer((host, port), OnvifHandler)
-        log.info('ONVIF HTTP server listening on %s:%s', host, port)
+        ports = registry.get_ports()
+        if not ports:
+            ports = [port]
+        self._servers = []
+        for p in ports:
+            srv = ThreadingOnvifServer((host, p), OnvifHandler)
+            self._servers.append(srv)
+            log.info('ONVIF HTTP server listening on %s:%s', host, p)
 
     def serve_forever(self):
-        self._server.serve_forever()
+        threads = []
+        for srv in self._servers:
+            t = threading.Thread(target=srv.serve_forever, daemon=True)
+            t.start()
+            threads.append((srv, t))
+        for srv, t in threads:
+            t.join()
 
     def shutdown(self):
-        self._server.shutdown()
+        for srv in self._servers:
+            srv.shutdown()
