@@ -40,10 +40,15 @@ class OnvifHandler(BaseHTTPRequestHandler):
 
         log.debug('%s -> %s/%s (protocol=%s)', camera['name'], action['service'], action['name'], camera.get('ptz_protocol'))
 
+        bh, bp = self.server.server_address
+
         if action['service'] == 'ptz' and camera.get('ptz_protocol') == 'rtsp_cmd':
             status, resp_headers, resp_body = handle_ptz(camera, action['name'], body)
         else:
-            status, resp_headers, resp_body = proxy_request(camera, 'POST', self.path, dict(self.headers), body)
+            status, resp_headers, resp_body = proxy_request(
+                camera, 'POST', self.path, dict(self.headers), body,
+                bridge_host=bh, bridge_port=bp,
+            )
 
         self._send_response(status, resp_headers, resp_body)
 
@@ -52,7 +57,11 @@ class OnvifHandler(BaseHTTPRequestHandler):
         if not camera:
             self.send_error(404, f'Camera not found (port={self.server.server_port}, path={self.path})')
             return
-        status, resp_headers, resp_body = proxy_request(camera, 'GET', self.path, dict(self.headers), b'')
+        bh, bp = self.server.server_address
+        status, resp_headers, resp_body = proxy_request(
+            camera, 'GET', self.path, dict(self.headers), b'',
+            bridge_host=bh, bridge_port=bp,
+        )
         self._send_response(status, resp_headers, resp_body)
 
     def _send_response(self, status, resp_headers, resp_body):
