@@ -52,7 +52,7 @@ class TestPtzSpaceInjection(unittest.TestCase):
 </soap:Envelope>'''
         result = _fix_ptz_profile(body)
         self.assertIn(b'DefaultContinuousPanTiltVelocitySpace', result)
-        self.assertIn(b'DefaultAbsolutePanTiltPositionSpace', result)
+        self.assertIn(b'DefaultAbsolutePantTiltPositionSpace', result)
         self.assertIn(b'DefaultRelativePanTiltTranslationSpace', result)
 
     def test_skip_if_already_has_velocity(self):
@@ -121,6 +121,58 @@ class TestPtzSpaceInjection(unittest.TestCase):
         self.assertIn(b'DefaultContinuousPanTiltVelocitySpace', result)
         self.assertGreater(len(result), len(body))
 
+    def test_inject_ptz_config_when_missing(self):
+        """Camera profiles with NO PTZConfiguration should get one injected.
+        This is the root cause of Frigate's 'No appropriate Onvif profiles found'."""
+        body = b'''<?xml version="1.0"?>
+<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+               xmlns:tt="http://www.onvif.org/ver10/schema"
+               xmlns:trt="http://www.onvif.org/ver10/media/wsdl">
+  <soap:Body>
+    <trt:GetProfilesResponse>
+      <trt:Profiles token="profile_1">
+        <tt:Name>Main</tt:Name>
+        <tt:VideoSourceConfiguration token="vs1">
+          <tt:Name>VideoSource</tt:Name>
+        </tt:VideoSourceConfiguration>
+        <tt:VideoEncoderConfiguration token="ve1">
+          <tt:Name>H264</tt:Name>
+          <tt:Encoding>H264</tt:Encoding>
+        </tt:VideoEncoderConfiguration>
+      </trt:Profiles>
+    </trt:GetProfilesResponse>
+  </soap:Body>
+</soap:Envelope>'''
+        result = _fix_ptz_profile(body)
+        self.assertIn(b'PTZConfiguration', result)
+        self.assertIn(b'DefaultContinuousPanTiltVelocitySpace', result)
+
+    def test_inject_ptz_config_single_profile(self):
+        """GetProfileResponse (singular) should also be patched."""
+        body = b'''<?xml version="1.0"?>
+<GetProfileResponse>
+  <Profiles token="profile_1">
+    <Name>Main</Name>
+    <VideoEncoderConfiguration token="ve1">
+      <Name>H264</Name>
+    </VideoEncoderConfiguration>
+  </Profiles>
+</GetProfileResponse>'''
+        result = _fix_ptz_profile(body)
+        self.assertIn(b'PTZConfiguration', result)
+        self.assertIn(b'DefaultContinuousPanTiltVelocitySpace', result)
+
+
+class TestXAddrRewriteRobust(unittest.TestCase):
+    def test_rewrite_ip_mismatch(self):
+        """Camera responds with IP even though we connected via hostname."""
+        camera = {'onvif_host': 'GWIPC-12345.home', 'onvif_port': 5000}
+        body = b'<XAddr>http://192.168.100.105:5000/onvif/device_service</XAddr>'
+        result = _rewrite_response(body, camera, '192.168.1.200', 5001)
+        self.assertIn(b'192.168.1.200:5001', result)
+        self.assertNotIn(b'192.168.100.105:5000', result)
+
 
 if __name__ == '__main__':
     unittest.main()
+

@@ -68,6 +68,25 @@ class WsDiscoveryServer:
 
         self._sock.close()
 
+    def _get_bridge_host(self, peer_addr=None):
+        """Resolve a routable bridge host, avoiding 0.0.0.0."""
+        if self.bridge_host not in ('0.0.0.0', '', '::'):
+            return self.bridge_host
+        # Find the local IP that would route to the peer
+        if peer_addr:
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.connect((peer_addr[0], 1))
+                local_ip = s.getsockname()[0]
+                s.close()
+                return local_ip
+            except Exception:
+                pass
+        try:
+            return socket.gethostbyname(socket.gethostname())
+        except Exception:
+            return '127.0.0.1'
+
     def _handle_probe(self, data, addr):
         if b'Probe' not in data:
             return
@@ -79,6 +98,8 @@ class WsDiscoveryServer:
         if m:
             relates_to = m.group(1).decode()
 
+        bridge_host = self._get_bridge_host(addr)
+
         for camera in self.registry.list_all():
             response = PROBE_MATCH.format(
                 msg_id=str(uuid.uuid4()),
@@ -86,7 +107,7 @@ class WsDiscoveryServer:
                 device_uuid=str(uuid.uuid4()),
                 model=camera.get('name', 'Camera'),
                 name=camera['name'],
-                bridge_host=self.bridge_host,
+                bridge_host=bridge_host,
                 bridge_port=self.bridge_port,
             )
             self._sock.sendto(response.encode(), addr)

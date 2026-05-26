@@ -3,11 +3,11 @@
   "bind_port": 5000,
   "cameras": [
     {
-      "name": "cam1",
+      "name": "yoosee_mips",
       "bind_port": 5001,
-      "onvif_host": "GWIPC-21257521.home",
+      "onvif_host": "192.168.1.102",
       "onvif_port": 5000,
-      "rtsp_host": "GWIPC-21257521.home",
+      "rtsp_host": "192.168.1.102",
       "rtsp_port": 554,
       "username": "admin",
       "password": "",

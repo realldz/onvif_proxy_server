@@ -8,12 +8,12 @@ class TestVelocityMapping(unittest.TestCase):
         self.assertEqual(_velocity_to_direction(0.01, -0.01), 'stop')
 
     def test_up(self):
-        self.assertEqual(_velocity_to_direction(0, -0.5), 'up')
-        self.assertEqual(_velocity_to_direction(0, -1.0), 'up')
+        self.assertEqual(_velocity_to_direction(0, 0.5), 'up')
+        self.assertEqual(_velocity_to_direction(0, 1.0), 'up')
 
     def test_down(self):
-        self.assertEqual(_velocity_to_direction(0, 0.5), 'down')
-        self.assertEqual(_velocity_to_direction(0, 1.0), 'down')
+        self.assertEqual(_velocity_to_direction(0, -0.5), 'down')
+        self.assertEqual(_velocity_to_direction(0, -1.0), 'down')
 
     def test_left(self):
         self.assertEqual(_velocity_to_direction(-0.5, 0), 'left')

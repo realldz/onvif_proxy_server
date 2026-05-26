@@ -63,7 +63,8 @@ def main():
              bind_host, bind_port, len(registry))
 
     try:
-        http_thread.join()
+        while http_thread.is_alive():
+            http_thread.join(timeout=0.5)
     except KeyboardInterrupt:
         log.info('Shutting down...')
         http_server.shutdown()

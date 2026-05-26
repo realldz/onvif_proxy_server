@@ -36,9 +36,9 @@ def _velocity_to_direction(x, y, threshold=0.05):
         if x > threshold:
             return 'right'
         return 'stop'
-    if y < -threshold:
-        return 'up'
     if y > threshold:
+        return 'up'
+    if y < -threshold:
         return 'down'
     return 'stop'
 
