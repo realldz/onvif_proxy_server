@@ -9,6 +9,12 @@ from .proxy import proxy_request
 
 log = logging.getLogger(__name__)
 
+BROKEN_PTZ = {
+    'GetServiceCapabilities', 'GetNodes', 'GetNode',
+    'GetConfigurations', 'GetConfiguration', 'GetCompatibleConfigurations',
+    'GetStatus',
+}
+
 
 class OnvifHandler(BaseHTTPRequestHandler):
     registry = None
@@ -42,7 +48,14 @@ class OnvifHandler(BaseHTTPRequestHandler):
 
         bh, bp = self.server.server_address
 
-        if action['service'] == 'ptz' and camera.get('ptz_protocol') == 'rtsp_cmd':
+        handle_locally = False
+        if action['service'] == 'ptz':
+            if camera.get('ptz_protocol') == 'rtsp_cmd':
+                handle_locally = True
+            elif action['name'] in BROKEN_PTZ:
+                handle_locally = True
+
+        if handle_locally:
             status, resp_headers, resp_body = handle_ptz(camera, action['name'], body)
         else:
             status, resp_headers, resp_body = proxy_request(

@@ -6,13 +6,15 @@ log = logging.getLogger(__name__)
 
 SKIP_HEADERS = {'host', 'connection', 'transfer-encoding', 'content-length', 'accept-encoding'}
 
-PTZ_CONFIG_INJECT = b'''<tt:PTZConfiguration token="default">
-      <tt:Name>Default PTZ</tt:Name>
-      <tt:NodeToken>default</tt:NodeToken>
-      <tt:DefaultContinuousPanTiltVelocitySpace>
-        <tt:URI>http://www.onvif.org/ver10/tptz/PanTiltSpaces/VelocityGenericSpace</tt:URI>
-      </tt:DefaultContinuousPanTiltVelocitySpace>
-    </tt:PTZConfiguration>'''
+PTZ_SPACES_TPL = b'''    <%(ns)s:DefaultAbsolutePanTiltPositionSpace>
+      <%(ns)s:URI>http://www.onvif.org/ver10/tptz/PanTiltSpaces/PositionGenericSpace</%(ns)s:URI>
+    </%(ns)s:DefaultAbsolutePanTiltPositionSpace>
+    <%(ns)s:DefaultRelativePanTiltTranslationSpace>
+      <%(ns)s:URI>http://www.onvif.org/ver10/tptz/PanTiltSpaces/TranslationGenericSpace</%(ns)s:URI>
+    </%(ns)s:DefaultRelativePanTiltTranslationSpace>
+    <%(ns)s:DefaultContinuousPanTiltVelocitySpace>
+      <%(ns)s:URI>http://www.onvif.org/ver10/tptz/PanTiltSpaces/VelocityGenericSpace</%(ns)s:URI>
+    </%(ns)s:DefaultContinuousPanTiltVelocitySpace>'''
 
 
 def proxy_request(camera, method, path, headers, body, bridge_host=None, bridge_port=None):
@@ -52,24 +54,36 @@ def _rewrite_response(body, camera, bridge_host, bridge_port):
     old = f'http://{camera["onvif_host"]}:{camera["onvif_port"]}'
     new = f'http://{bridge_host}:{bridge_port}'
     body = body.replace(old.encode(), new.encode())
-    body = _inject_ptz_config(body)
+    body = _fix_ptz_profile(body)
     return body
 
 
-def _inject_ptz_config(body):
+def _get_ns_prefix(body, namespace_uri):
+    m = re.search(rb'xmlns:(\w+)="' + re.escape(namespace_uri.encode()) + rb'"', body)
+    if m:
+        return m.group(1)
+    return None
+
+
+def _fix_ptz_profile(body):
     if b'GetProfilesResponse' not in body:
         return body
 
+    ns = _get_ns_prefix(body, 'http://www.onvif.org/ver10/schema')
+    if not ns:
+        ns = b'tt'
+
+    spaces = PTZ_SPACES_TPL.replace(b'%(ns)s', ns)
+
     def _replacer(m):
         block = m.group(0)
-        if b'<tt:PTZConfiguration' in block:
+        if b'DefaultContinuousPanTiltVelocitySpace' in block:
             return block
         closing = m.group(2)
-        indent = b'    '
-        return block.replace(closing, indent + PTZ_CONFIG_INJECT + b'\n' + closing)
+        return block.replace(closing, spaces + b'\n  ' + closing)
 
     result = re.sub(
-        rb'(<\w+:Profiles[^>]*>.*?)(</\w+:Profiles>)',
+        rb'(<(?:[^>\s]+:)?PTZConfiguration[^>]*>.*?)(</(?:[^>\s]+:)?PTZConfiguration>)',
         _replacer,
         body,
         flags=re.DOTALL,
